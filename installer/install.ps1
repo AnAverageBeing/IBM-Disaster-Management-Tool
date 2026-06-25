@@ -1,4 +1,3 @@
-# IBM Disaster Management Tool Windows Installer
 param(
     [string]$InstallDir = "$env:USERPROFILE\.ibm-dmt",
     [switch]$NoDesktop,
@@ -6,85 +5,117 @@ param(
     [switch]$NoLaunch
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $Host.UI.RawUI.WindowTitle = "IBM-DMT Installer"
 
+function Info  { Write-Host "[INFO]  $args" -ForegroundColor Green }
+function Warn  { Write-Host "[WARN]  $args" -ForegroundColor Yellow }
+function Err   { Write-Host "[ERR]   $args" -ForegroundColor Red }
+function Step  { Write-Host "`n-- $args --" -ForegroundColor White }
+
+$venvPath    = Join-Path $InstallDir "venv"
+$repoDir     = Join-Path $InstallDir "repo"
+$launcherPath = Join-Path $InstallDir "ibm-dmt.bat"
+
 Write-Host "IBM Disaster Management Tool Installer" -ForegroundColor Green
-Write-Host "========================================"
-Write-Host ""
 
 # Check Python
+Step "Python"
 try {
-    $pyVersion = python --version
-    Write-Host "Found: $pyVersion" -ForegroundColor Green
+    $pyVer = python --version 2>&1
+    Info "Found $pyVer"
 } catch {
-    Write-Host "Python 3.10+ is required. Download from https://python.org" -ForegroundColor Red
+    Err "Python 3.10+ required. Download from https://python.org"
     exit 1
 }
 
-# Check pip
-try {
-    pip --version | Out-Null
-} catch {
-    python -m ensurepip
-}
-
-# Create virtual environment
-Write-Host "Creating virtual environment..." -ForegroundColor Yellow
-$venvPath = Join-Path $InstallDir "venv"
+# Create venv
+Step "Virtual environment"
 python -m venv $venvPath
 $pip = Join-Path $venvPath "Scripts\pip"
+& $pip install --quiet --upgrade pip setuptools wheel
+Info "Virtual environment ready"
 
-# Install dependencies
-Write-Host "Installing Python packages..." -ForegroundColor Yellow
-& $pip install --upgrade pip
-& $pip install pyqt6 pyzstd cryptography requests apscheduler pygithub psutil `
-    pymongo redis mysql-connector-python psycopg2-binary pymssql `
-    cx-oracle pydantic platformdirs
+# Core packages
+Step "Core packages"
+$core = @(
+    "pyqt6","pyzstd","cryptography","requests","apscheduler",
+    "pygithub","psutil","pydantic","platformdirs"
+)
+& $pip install --quiet $core 2>&1 | Out-Null
+Info "Core installed"
 
-# Clone repo
-Write-Host "Cloning repository..." -ForegroundColor Yellow
-$repoDir = Join-Path $InstallDir "repo"
-if (Test-Path $repoDir) {
-    Set-Location $repoDir
-    git pull
+# Database drivers (optional — each can fail independently)
+Step "Database drivers"
+$dbDrivers = @(
+    "pymongo","redis","mysql-connector-python","psycopg2-binary","pymssql"
+)
+foreach ($pkg in $dbDrivers) {
+    try {
+        & $pip install --quiet $pkg 2>&1 | Out-Null
+        Info "  $pkg OK"
+    } catch {
+        Warn "  $pkg skipped"
+    }
+}
+# cx-Oracle — only attempt if Oracle client is likely installed
+$oracleHome = [Environment]::GetEnvironmentVariable("ORACLE_HOME")
+if ($oracleHome -and (Test-Path $oracleHome)) {
+    try { & $pip install --quiet cx-oracle 2>&1 | Out-Null; Info "  cx-oracle OK" }
+    catch { Warn "  cx-oracle skipped" }
 } else {
-    git clone "https://github.com/AnAverageBeing/IBM-Disaster-Management-Tool.git" $repoDir
+    Warn "  cx-oracle skipped (Oracle Instant Client not detected)"
 }
 
-# Create launcher
-$launcherPath = Join-Path $InstallDir "ibm-dmt.bat"
-@"
+# Clone repo
+Step "Repository"
+if (Test-Path $repoDir) {
+    try { Set-Location $repoDir; git pull --ff-only 2>&1 | Out-Null; Info "Updated" }
+    catch { Warn "Update failed" }
+} else {
+    try {
+        git clone --depth 1 "https://github.com/AnAverageBeing/IBM-Disaster-Management-Tool.git" $repoDir 2>&1 | Out-Null
+        Info "Cloned"
+    } catch {
+        Err "Clone failed: $_"; exit 1
+    }
+}
+try {
+    & $pip install --quiet -e $repoDir 2>&1 | Out-Null
+} catch { Warn "Editable install skipped" }
+
+# Launcher
+Step "Launcher"
+$batContent = @"
 @echo off
 call "$venvPath\Scripts\activate"
+cd /d "$repoDir" 2>nul
 python -m ibm_dmt.main %*
-"@ | Out-File -FilePath $launcherPath -Encoding ASCII
+"@
+$batContent | Out-File -FilePath $launcherPath -Encoding ASCII -Force
 
-# Add to PATH
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$InstallDir*") {
     [Environment]::SetEnvironmentVariable("Path", "$userPath;$InstallDir", "User")
-    Write-Host "Added $InstallDir to PATH" -ForegroundColor Green
 }
+Info "Launcher: $launcherPath"
 
-# Create shortcut
+# Desktop shortcut
 if (-not $NoDesktop) {
-    $WshShell = New-Object -ComObject WScript.Shell
-    $shortcut = $WshShell.CreateShortcut("$env:USERPROFILE\Desktop\IBM-DMT.lnk")
-    $shortcut.TargetPath = $launcherPath
-    $shortcut.WorkingDirectory = $repoDir
-    $shortcut.Description = "IBM Disaster Management Tool"
-    $shortcut.Save()
-    Write-Host "Created desktop shortcut" -ForegroundColor Green
+    try {
+        $wshell = New-Object -ComObject WScript.Shell
+        $shortcut = $wshell.CreateShortcut("$env:USERPROFILE\Desktop\IBM-DMT.lnk")
+        $shortcut.TargetPath = $launcherPath
+        $shortcut.WorkingDirectory = $repoDir
+        $shortcut.Description = "IBM Disaster Management Tool"
+        $shortcut.Save()
+        Info "Desktop shortcut created"
+    } catch { Warn "Desktop shortcut skipped" }
 }
 
-Write-Host ""
-Write-Host "Installation Complete!" -ForegroundColor Green
-Write-Host ""
-Write-Host "  Run: ibm-dmt" -ForegroundColor White
-Write-Host "  Config: $env:USERPROFILE\.config\ibm-dmt" -ForegroundColor White
+Write-Host "`nIBM-DMT Installation complete" -ForegroundColor Green
 
 if (-not $NoLaunch) {
-    Write-Host "Launching IBM-DMT GUI..." -ForegroundColor Yellow
+    Write-Host "Launching GUI..." -ForegroundColor Yellow
     & $venvPath\Scripts\python.exe -m ibm_dmt.main
 }

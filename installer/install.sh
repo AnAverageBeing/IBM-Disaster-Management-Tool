@@ -1,123 +1,123 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 IBM_DMT_VERSION="1.0.0"
 REPO="AnAverageBeing/IBM-Disaster-Management-Tool"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.ibm-dmt}"
 VENV_DIR="$INSTALL_DIR/venv"
-
+CLONE_DIR="$INSTALL_DIR/repo"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 
-BOLD='\033[1m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+BOLD='\033[1m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
-echo -e "${BOLD}IBM Disaster Management Tool v${IBM_DMT_VERSION}${NC}"
-echo -e "${BOLD}Installer${NC}"
-echo ""
+info()  { echo -e "${GREEN}${BOLD}[INFO]${NC} $1"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+err()   { echo -e "${RED}[ERR]${NC}  $1"; }
+step()  { echo; echo -e "${BOLD}── $1 ──${NC}"; }
 
 detect_package_manager() {
-    if command -v apt &>/dev/null; then
-        echo "apt"
-    elif command -v dnf &>/dev/null; then
-        echo "dnf"
-    elif command -v yum &>/dev/null; then
-        echo "yum"
-    elif command -v pacman &>/dev/null; then
-        echo "pacman"
-    elif command -v zypper &>/dev/null; then
-        echo "zypper"
-    elif command -v brew &>/dev/null; then
-        echo "brew"
-    else
-        echo "unknown"
-    fi
+    for pm in apt dnf yum pacman zypper brew; do
+        command -v "$pm" &>/dev/null && echo "$pm" && return
+    done
+    echo "unknown"
 }
 
 install_system_deps() {
+    step "System dependencies"
     local pm
     pm=$(detect_package_manager)
-    echo -e "${YELLOW}Installing system dependencies...${NC}"
-
     case "$pm" in
         apt)
-            sudo apt update
-            sudo apt install -y python3 python3-pip python3-venv git curl zstd xz-utils p7zip-full || true
+            sudo apt update -qq && sudo apt install -y -qq \
+                python3 python3-pip python3-venv git curl zstd xz-utils p7zip-full p7zip >/dev/null 2>&1 || true
             ;;
         dnf|yum)
-            sudo "$pm" install -y python3 python3-pip python3-virtualenv git curl zstd xz p7zip || true
+            sudo "$pm" install -y \
+                python3 python3-pip python3-virtualenv git curl zstd xz p7zip >/dev/null 2>&1 || true
             ;;
         pacman)
-            sudo pacman -Sy --noconfirm python python-pip python-virtualenv git curl zstd xz p7zip || true
+            sudo pacman -Sy --noconfirm \
+                python python-pip python-virtualenv git curl zstd xz p7zip >/dev/null 2>&1 || true
             ;;
         brew)
-            brew install python3 git curl zstd xz p7zip || true
+            brew install python3 git curl zstd xz p7zip >/dev/null 2>&1 || true
             ;;
         *)
-            echo -e "${YELLOW}Unsupported package manager. Install python3, pip, git, curl manually.${NC}"
+            warn "Unknown package manager. Ensure python3, pip, git, curl are installed."
             ;;
     esac
+    info "System dependencies OK"
 }
 
 setup_venv() {
-    echo -e "${YELLOW}Setting up Python virtual environment...${NC}"
+    step "Python virtual environment"
     mkdir -p "$INSTALL_DIR"
     python3 -m venv "$VENV_DIR"
     source "$VENV_DIR/bin/activate"
-    pip install --upgrade pip
+    pip install --quiet --upgrade pip setuptools wheel >/dev/null 2>&1
+    info "Virtual environment ready at $VENV_DIR"
 }
 
 install_python_deps() {
-    echo -e "${YELLOW}Installing Python dependencies...${NC}"
+    step "Python packages (core)"
     source "$VENV_DIR/bin/activate"
-    pip install pyqt6 pyzstd cryptography requests apscheduler pygithub psutil \
-                pymongo redis mysql-connector-python psycopg2-binary pymssql \
-                cx-oracle pydantic platformdirs
-}
 
-install_package() {
-    local clone_dir="$INSTALL_DIR/repo"
-    if [ -d "$clone_dir" ]; then
-        source "$VENV_DIR/bin/activate"
-        pip install -e "$clone_dir"
+    CORE_PKGS=(
+        pyqt6 pyzstd cryptography requests apscheduler pygithub psutil
+        pydantic platformdirs
+    )
+    pip install --quiet "${CORE_PKGS[@]}" 2>&1 | tail -1
+    info "Core packages installed"
+
+    step "Python packages (database drivers)"
+    DB_PKGS=(
+        pymongo redis mysql-connector-python psycopg2-binary pymssql
+    )
+    for pkg in "${DB_PKGS[@]}"; do
+        pip install --quiet "$pkg" 2>/dev/null && info "  $pkg OK" || warn "  $pkg skipped (not available on this system)"
+    done
+
+    step "Python packages (optional)"
+    if python3 -c "import ctypes; ctypes.CDLL('libclntsh.so')" 2>/dev/null ||
+       python3 -c "import ctypes; ctypes.CDLL('libclntsh.dylib')" 2>/dev/null ||
+       [ -n "${ORACLE_HOME:-}" ]; then
+        pip install --quiet cx-oracle 2>/dev/null && info "  cx-oracle OK" || warn "  cx-oracle skipped"
+    else
+        warn "  cx-oracle skipped (Oracle Instant Client not detected)"
     fi
 }
 
 clone_repo() {
-    local clone_dir="$INSTALL_DIR/repo"
-    if [ -d "$clone_dir" ]; then
-        echo -e "${YELLOW}Updating existing installation...${NC}"
-        cd "$clone_dir"
-        git pull
+    step "Cloning repository"
+    if [ -d "$CLONE_DIR" ]; then
+        info "Updating existing installation..."
+        git -C "$CLONE_DIR" pull --ff-only >/dev/null 2>&1 && info "Updated" || warn "Update failed, using existing"
     else
-        echo -e "${YELLOW}Cloning repository...${NC}"
-        if [ -n "$GITHUB_TOKEN" ]; then
-            git clone "https://${GITHUB_TOKEN}@github.com/${REPO}.git" "$clone_dir"
-        else
-            git clone "https://github.com/${REPO}.git" "$clone_dir"
-        fi
+        local url="https://github.com/${REPO}.git"
+        [ -n "$GITHUB_TOKEN" ] && url="https://${GITHUB_TOKEN}@github.com/${REPO}.git"
+        git clone --depth 1 "$url" "$CLONE_DIR" >/dev/null 2>&1 && info "Cloned" || {
+            err "Clone failed"; exit 1
+        }
     fi
+    source "$VENV_DIR/bin/activate"
+    pip install --quiet -e "$CLONE_DIR" >/dev/null 2>&1 || warn "Editable install skipped"
 }
 
-create_symlink() {
+create_launcher() {
+    step "Launcher"
     local launcher="$INSTALL_DIR/ibm-dmt"
     cat > "$launcher" << LAUNCHER
 #!/usr/bin/env bash
-export IBM_DMT_HOME="$INSTALL_DIR"
-source "\$IBM_DMT_HOME/venv/bin/activate"
-cd "\$IBM_DMT_HOME/repo"
+source "$VENV_DIR/bin/activate"
+cd "$CLONE_DIR" 2>/dev/null || true
 python3 -m ibm_dmt.main "\$@"
 LAUNCHER
     chmod +x "$launcher"
 
-    local bin_dir="$HOME/.local/bin"
+    local bin_dir="${XDG_BIN_HOME:-$HOME/.local/bin}"
     mkdir -p "$bin_dir"
     ln -sf "$launcher" "$bin_dir/ibm-dmt"
-
-    echo -e "${GREEN}Created launcher: $bin_dir/ibm-dmt${NC}"
-    echo -e "${YELLOW}Add to PATH if needed: export PATH=\"\$PATH:$bin_dir\"${NC}"
+    info "Launcher: $bin_dir/ibm-dmt"
 }
 
 create_desktop_entry() {
@@ -125,82 +125,70 @@ create_desktop_entry() {
     mkdir -p "$desktop_dir"
     cat > "$desktop_dir/ibm-dmt.desktop" << DESKTOP
 [Desktop Entry]
-Name=IBM Disaster Management Tool
-Comment=Disaster Recovery & Business Continuity Platform
-Exec=$INSTALL_DIR/ibm-dmt
-Icon=$INSTALL_DIR/repo/icon.png
-Terminal=false
 Type=Application
+Name=IBM Disaster Management Tool
+Comment=Disaster Recovery & Business Continuity
+Exec=$INSTALL_DIR/ibm-dmt
+Terminal=false
 Categories=Utility;System;
 DESKTOP
     chmod +x "$desktop_dir/ibm-dmt.desktop"
-    echo -e "${GREEN}Created desktop entry${NC}"
+    info "Desktop entry created"
 }
 
 create_systemd_service() {
     local service_path="$HOME/.config/systemd/user/ibm-dmt.service"
     mkdir -p "$(dirname "$service_path")"
-    cat > "$service_path" << SERVICEEOF
+    cat > "$service_path" << SERVICE
 [Unit]
-Description=IBM Disaster Management Tool Background Service
+Description=IBM Disaster Management Tool
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=$INSTALL_DIR/ibm-dmt --headless --config $INSTALL_DIR/config.json
+ExecStart=$INSTALL_DIR/ibm-dmt --headless
 Restart=on-failure
 RestartSec=30
 
 [Install]
 WantedBy=default.target
-SERVICEEOF
-
-    systemctl --user daemon-reload
-    echo -e "${GREEN}Created systemd user service${NC}"
+SERVICE
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
+    info "Systemd service created"
 }
 
 launch_gui() {
-    echo -e "${GREEN}Launching IBM-DMT GUI...${NC}"
+    echo
+    info "Launching IBM-DMT GUI..."
     source "$VENV_DIR/bin/activate"
+    cd "$CLONE_DIR" 2>/dev/null || true
     python3 -m ibm_dmt.main &
-}
-
-run_post_install() {
-    echo ""
-    echo -e "${GREEN}${BOLD}Installation Complete!${NC}"
-    echo ""
-    echo -e "  Run:  ${BOLD}ibm-dmt${NC}"
-    echo -e "  Or:   ${BOLD}ibm-dmt --headless --config config.json${NC}"
-    echo ""
-    echo -e "  Sessions directory: ${BOLD}$INSTALL_DIR/sessions${NC}"
-    echo -e "  Config directory:   ${BOLD}$HOME/.config/ibm-dmt${NC}"
-    echo -e "  Make sure $HOME/.local/bin is in your PATH."
-    echo ""
+    sleep 1
 }
 
 main() {
-    echo -e "${BOLD}IBM-DMT Installer${NC}"
-    echo "========================"
-    echo ""
+    echo -e "${BOLD}IBM Disaster Management Tool v${IBM_DMT_VERSION}${NC}"
+    echo -e "${BOLD}Installer${NC}"
 
     install_system_deps
     setup_venv
     install_python_deps
     clone_repo
-    install_package
-    create_symlink
+    create_launcher
 
     if [[ "$*" != *"--no-desktop"* ]]; then
         create_desktop_entry
     fi
-
     if [[ "$*" == *"--service"* ]]; then
         create_systemd_service
     fi
 
-    run_post_install
+    echo
+    echo -e "${GREEN}${BOLD}Installation complete${NC}"
+    echo -e "  Run:  ${BOLD}ibm-dmt${NC}"
+    echo -e "  Config: ${BOLD}\$HOME/.config/ibm-dmt${NC}"
 
-    if [[ "$*" != *"--no-launch"* ]] && [[ "${IBM_DMT_NO_LAUNCH:-}" != "1" ]]; then
+    if [[ "$*" != *"--no-launch"* ]]; then
         launch_gui
     fi
 }
