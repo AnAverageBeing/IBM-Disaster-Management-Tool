@@ -38,11 +38,10 @@ class AlertManager:
                 self._log.error(f"Alert handler failed for {event}: {e}")
 
     def send_console(self, data: dict) -> None:
+        import logging as _logging
         level = data.get("level", "INFO")
         message = data.get("message", "")
-        self._log.logger.log(
-            getattr(self._log.logger, level.upper(), 20), f"[ALERT] {message}"
-        )
+        self._log.log(getattr(_logging, level.upper(), _logging.INFO), f"[ALERT] {message}")
 
     def send_discord(self, data: dict) -> None:
         webhook_url = self._config.get("alerts.discord_webhook")

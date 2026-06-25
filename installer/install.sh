@@ -28,9 +28,12 @@ install_system_deps() {
     pm=$(detect_package_manager)
     case "$pm" in
         apt)
-            sudo apt update -qq && sudo apt install -y -qq \
-                python3 python3-pip python3-venv git curl zstd xz-utils \
-                p7zip-full p7zip libxcb-cursor0 >/dev/null 2>&1 || true
+            sudo apt update -qq 2>/dev/null
+            for pkg in python3 python3-pip python3-venv git curl zstd xz-utils \
+                       p7zip-full p7zip libxcb-cursor0; do
+                dpkg -s "$pkg" >/dev/null 2>&1 && continue
+                sudo apt install -y -qq "$pkg" 2>/dev/null && info "  $pkg installed" || warn "  $pkg failed"
+            done
             ;;
         dnf|yum)
             sudo "$pm" install -y \
@@ -178,8 +181,14 @@ launch_gui() {
     info "Launching IBM-DMT GUI..."
     source "$VENV_DIR/bin/activate"
     cd "$CLONE_DIR" 2>/dev/null || true
+
+    if ! ldconfig -p 2>/dev/null | grep -q libxcb-cursor; then
+        warn "libxcb-cursor not found — falling back to offscreen mode"
+        export QT_QPA_PLATFORM=offscreen
+    fi
+
     python3 -m ibm_dmt.main &
-    sleep 1
+    sleep 2
 }
 
 main() {

@@ -148,7 +148,7 @@ class BackupEngine:
                     err = f"Encryption failed: {e}"
                     results["errors"].append(err)
 
-        all_files = results["files"]
+        all_files = list(results["files"])
         checksums = {}
         for fp in all_files:
             checksums[Path(fp).name] = self._sha256(fp)
@@ -180,6 +180,11 @@ class BackupEngine:
 
         log_path = self._write_log(results, temp_dir)
         all_files.append(log_path)
+
+        for fp in all_files:
+            name = Path(fp).name
+            if name not in checksums:
+                checksums[name] = self._sha256(fp)
 
         for dest_config in destinations:
             dest_type = dest_config.get("type", "local")
