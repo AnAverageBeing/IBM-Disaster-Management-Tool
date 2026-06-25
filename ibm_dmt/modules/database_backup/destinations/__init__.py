@@ -1,0 +1,4 @@
+from ibm_dmt.modules.database_backup.destinations.base import BackupDestination
+from ibm_dmt.modules.database_backup.destinations.local import LocalDestination
+from ibm_dmt.modules.database_backup.destinations.discord import DiscordDestination
+from ibm_dmt.modules.database_backup.destinations.github import GitHubDestination

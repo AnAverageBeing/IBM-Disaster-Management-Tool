@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "ibm-dmt"
+version = "1.0.0"
+description = "IBM Disaster Management Tool - Database Backup Management"
+authors = [{name = "IBM DMT Team"}]
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+ibm-dmt = "ibm_dmt.main:main"
+
+[tool.setuptools.packages.find]
+include = ["ibm_dmt*"]
