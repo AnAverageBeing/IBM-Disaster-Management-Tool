@@ -1,10 +1,10 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QStackedWidget, QLabel, QListWidget,
-    QListWidgetItem, QFrame, QStatusBar, QMessageBox, QSplitter,
+    QPushButton, QStackedWidget, QLabel, QFrame,
+    QStatusBar,
 )
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtGui import QDesktopServices
 from ibm_dmt.core.plugin_manager import PluginManager
 from ibm_dmt.core.logger import Logger
 from ibm_dmt.gui.dashboard import DashboardWidget
@@ -15,12 +15,12 @@ SIDEBAR_STYLE = """
 QWidget#sidebar {
     background-color: #161b22;
     border-right: 1px solid #30363d;
-    min-width: 240px;
-    max-width: 240px;
+    min-width: 220px;
+    max-width: 220px;
 }
 QPushButton#navButton {
     text-align: left;
-    padding: 12px 16px;
+    padding: 10px 16px;
     border: none;
     border-radius: 0;
     background-color: transparent;
@@ -34,20 +34,15 @@ QPushButton#navButton:hover {
 QPushButton#navButton:checked {
     background-color: #1f6feb22;
     color: #e6edf3;
-    border-left: 3px solid #1f6feb;
+    border-left: 3px solid #539bf5;
 }
-QPushButton#headerButton {
-    text-align: left;
-    padding: 16px;
-    border: none;
-    border-radius: 0;
-    background-color: transparent;
-    font-size: 16px;
-    font-weight: 700;
-    color: #e6edf3;
+QLabel#sidebarFooter {
+    font-size: 10px;
+    color: #484f58;
+    padding: 8px 16px;
 }
-QPushButton#headerButton:hover {
-    background-color: #1c2128;
+QLabel#sidebarFooter:hover {
+    color: #8b949e;
 }
 """
 
@@ -64,7 +59,7 @@ class MainWindow(QMainWindow):
 
     def _init_ui(self):
         self.setWindowTitle("IBM Disaster Management Tool")
-        self.setMinimumSize(1200, 800)
+        self.setMinimumSize(1100, 700)
         self.setStyleSheet(SIDEBAR_STYLE)
 
         central = QWidget()
@@ -79,9 +74,10 @@ class MainWindow(QMainWindow):
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.setSpacing(0)
 
-        header = QPushButton("IBM-DMT")
-        header.setObjectName("headerButton")
-        sidebar_layout.addWidget(header)
+        brand = QLabel("IBM-DMT")
+        brand.setObjectName("headerButton")
+        brand.setStyleSheet("font-size: 16px; font-weight: 700; color: #e6edf3; padding: 16px;")
+        sidebar_layout.addWidget(brand)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
@@ -93,17 +89,26 @@ class MainWindow(QMainWindow):
         self._nav_layout.setContentsMargins(0, 0, 0, 0)
         self._nav_layout.setSpacing(0)
         self._nav_layout.addStretch()
-        sidebar_layout.addWidget(self._nav_list)
+        sidebar_layout.addWidget(self._nav_list, 1)
 
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.HLine)
-        sep2.setStyleSheet("color: #30363d;")
-        sidebar_layout.addWidget(sep2)
+        sidebar_layout.addWidget(sep)
 
         session_btn = QPushButton("Manage Sessions")
         session_btn.setObjectName("navButton")
         session_btn.clicked.connect(self._open_session_manager)
         sidebar_layout.addWidget(session_btn)
+
+        footer = QLabel('<a style="color:#484f58;text-decoration:none;" href="https://studio.pingless.org">PingLess Studios</a>')
+        footer.setObjectName("sidebarFooter")
+        footer.setOpenExternalLinks(True)
+        footer.setCursor(Qt.CursorShape.PointingHandCursor)
+        footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sidebar_layout.addWidget(footer)
+
+        maintainer = QLabel("maintainer: AnAverageBeing")
+        maintainer.setObjectName("sidebarFooter")
+        maintainer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sidebar_layout.addWidget(maintainer)
 
         main_layout.addWidget(sidebar)
 
@@ -115,9 +120,11 @@ class MainWindow(QMainWindow):
         self._content_stack.addWidget(self._dashboard)
         self._content_stack.setCurrentWidget(self._dashboard)
 
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Ready")
+        sb = QStatusBar()
+        sb.setStyleSheet("background-color:#161b22; border-top:1px solid #30363d; color:#8b949e; padding:4px;")
+        self.setStatusBar(sb)
+        self.status_bar = sb
+        self.status_bar.showMessage("Ready — IBM Disaster Management Tool | PingLess Studios")
 
     def _discover_modules(self):
         modules = self._plugin_manager.discover_modules()
@@ -144,7 +151,7 @@ class MainWindow(QMainWindow):
         module = self._modules.get(module_name) or self._plugin_manager.get_module(module_name)
         if module:
             self._content_stack.setCurrentWidget(module.get_widget())
-            self.status_bar.showMessage(f"Active Module: {module_name}")
+            self.status_bar.showMessage(f"Active: {module_name}")
 
     def _open_session_manager(self):
         dialog = SessionManagerDialog(self)

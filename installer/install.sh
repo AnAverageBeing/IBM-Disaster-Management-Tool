@@ -29,15 +29,18 @@ install_system_deps() {
     case "$pm" in
         apt)
             sudo apt update -qq && sudo apt install -y -qq \
-                python3 python3-pip python3-venv git curl zstd xz-utils p7zip-full p7zip >/dev/null 2>&1 || true
+                python3 python3-pip python3-venv git curl zstd xz-utils \
+                p7zip-full p7zip libxcb-cursor0 >/dev/null 2>&1 || true
             ;;
         dnf|yum)
             sudo "$pm" install -y \
-                python3 python3-pip python3-virtualenv git curl zstd xz p7zip >/dev/null 2>&1 || true
+                python3 python3-pip python3-virtualenv git curl zstd xz \
+                p7zip p7zip-plugins xcb-util-cursor >/dev/null 2>&1 || true
             ;;
         pacman)
             sudo pacman -Sy --noconfirm \
-                python python-pip python-virtualenv git curl zstd xz p7zip >/dev/null 2>&1 || true
+                python python-pip python-virtualenv git curl zstd xz \
+                p7zip xcb-util-cursor >/dev/null 2>&1 || true
             ;;
         brew)
             brew install python3 git curl zstd xz p7zip >/dev/null 2>&1 || true
@@ -110,7 +113,20 @@ create_launcher() {
 #!/usr/bin/env bash
 source "$VENV_DIR/bin/activate"
 cd "$CLONE_DIR" 2>/dev/null || true
+
+# Detect missing xcb-cursor and suggest fix
+if ! ldconfig -p 2>/dev/null | grep -q libxcb-cursor && ! ldconfig -p 2>/dev/null | grep -q libxcb-cursor; then
+    if command -v apt &>/dev/null; then
+        export QT_QPA_PLATFORM=offscreen
+    fi
+fi
+
 python3 -m ibm_dmt.main "\$@"
+exit_code=\$?
+
+if [ \$exit_code -eq 127 ]; then
+    python3 -m ibm_dmt.main --platform offscreen "\$@"
+fi
 LAUNCHER
     chmod +x "$launcher"
 

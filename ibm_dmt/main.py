@@ -1,6 +1,5 @@
 import sys
 import os
-from pathlib import Path
 
 
 def main():
@@ -14,8 +13,7 @@ def _run_gui():
     try:
         from PyQt6.QtWidgets import QApplication
     except ImportError:
-        print("Error: PyQt6 is required for GUI mode.")
-        print("Install it: pip install PyQt6")
+        print("Error: PyQt6 is required. Run the installer or: pip install PyQt6")
         sys.exit(1)
 
     from ibm_dmt.gui.app import Application
