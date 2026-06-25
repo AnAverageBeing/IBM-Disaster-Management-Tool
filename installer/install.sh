@@ -77,6 +77,14 @@ install_python_deps() {
                 cx-oracle pydantic platformdirs
 }
 
+install_package() {
+    local clone_dir="$INSTALL_DIR/repo"
+    if [ -d "$clone_dir" ]; then
+        source "$VENV_DIR/bin/activate"
+        pip install -e "$clone_dir"
+    fi
+}
+
 clone_repo() {
     local clone_dir="$INSTALL_DIR/repo"
     if [ -d "$clone_dir" ]; then
@@ -95,11 +103,12 @@ clone_repo() {
 
 create_symlink() {
     local launcher="$INSTALL_DIR/ibm-dmt"
-    cat > "$launcher" << 'LAUNCHER'
+    cat > "$launcher" << LAUNCHER
 #!/usr/bin/env bash
-export IBM_DMT_HOME="$(dirname "$(readlink -f "$0")")"
-source "$IBM_DMT_HOME/venv/bin/activate"
-python3 -m ibm_dmt.main "$@"
+export IBM_DMT_HOME="$INSTALL_DIR"
+source "\$IBM_DMT_HOME/venv/bin/activate"
+cd "\$IBM_DMT_HOME/repo"
+python3 -m ibm_dmt.main "\$@"
 LAUNCHER
     chmod +x "$launcher"
 
@@ -150,6 +159,12 @@ SERVICEEOF
     echo -e "${GREEN}Created systemd user service${NC}"
 }
 
+launch_gui() {
+    echo -e "${GREEN}Launching IBM-DMT GUI...${NC}"
+    source "$VENV_DIR/bin/activate"
+    python3 -m ibm_dmt.main &
+}
+
 run_post_install() {
     echo ""
     echo -e "${GREEN}${BOLD}Installation Complete!${NC}"
@@ -159,8 +174,8 @@ run_post_install() {
     echo ""
     echo -e "  Sessions directory: ${BOLD}$INSTALL_DIR/sessions${NC}"
     echo -e "  Config directory:   ${BOLD}$HOME/.config/ibm-dmt${NC}"
-    echo ""
     echo -e "  Make sure $HOME/.local/bin is in your PATH."
+    echo ""
 }
 
 main() {
@@ -172,6 +187,7 @@ main() {
     setup_venv
     install_python_deps
     clone_repo
+    install_package
     create_symlink
 
     if [[ "$*" != *"--no-desktop"* ]]; then
@@ -183,6 +199,10 @@ main() {
     fi
 
     run_post_install
+
+    if [[ "$*" != *"--no-launch"* ]] && [[ "${IBM_DMT_NO_LAUNCH:-}" != "1" ]]; then
+        launch_gui
+    fi
 }
 
 main "$@"

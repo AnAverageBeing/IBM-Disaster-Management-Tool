@@ -2,7 +2,8 @@
 param(
     [string]$InstallDir = "$env:USERPROFILE\.ibm-dmt",
     [switch]$NoDesktop,
-    [switch]$Service
+    [switch]$Service,
+    [switch]$NoLaunch
 )
 
 $ErrorActionPreference = "Stop"
@@ -82,3 +83,8 @@ Write-Host "Installation Complete!" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Run: ibm-dmt" -ForegroundColor White
 Write-Host "  Config: $env:USERPROFILE\.config\ibm-dmt" -ForegroundColor White
+
+if (-not $NoLaunch) {
+    Write-Host "Launching IBM-DMT GUI..." -ForegroundColor Yellow
+    & $venvPath\Scripts\python.exe -m ibm_dmt.main
+}
