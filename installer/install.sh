@@ -117,20 +117,10 @@ create_launcher() {
 source "$VENV_DIR/bin/activate"
 cd "$CLONE_DIR" 2>/dev/null || true
 
-# Test Qt xcb plugin, fall back to offscreen if it fails
-python3 -c "
-import os, subprocess, sys
-os.environ['QT_LOGGING_RULES'] = 'qt.qpa.xcb=false'
-p = subprocess.run([sys.executable, '-c', '''
-from PyQt6.QtWidgets import QApplication, QWidget
-import sys
-app = QApplication(sys.argv)
-w = QWidget()
-w.show()
-app.quit()
-'''], capture_output=True, timeout=5, env={**os.environ, 'QT_QPA_PLATFORM': 'xcb'})
-sys.exit(p.returncode)
-" 2>/dev/null || export QT_QPA_PLATFORM=offscreen
+# Use xcb if a display is available, offscreen otherwise
+if [ -z "\${DISPLAY:-}" ] && [ -z "\${WAYLAND_DISPLAY:-}" ]; then
+    export QT_QPA_PLATFORM=offscreen
+fi
 
 python3 -m ibm_dmt.main "\$@"
 LAUNCHER
@@ -194,21 +184,9 @@ launch_gui() {
     source "$VENV_DIR/bin/activate"
     cd "$CLONE_DIR" 2>/dev/null || true
 
-    # Test if Qt xcb plugin works (it needs libxcb-cursor0). If not, use offscreen.
-    if ! python3 -c "
-import os, subprocess, sys
-os.environ['QT_LOGGING_RULES'] = 'qt.qpa.xcb=false'
-p = subprocess.run([sys.executable, '-c', '''
-from PyQt6.QtWidgets import QApplication, QWidget
-import sys
-app = QApplication(sys.argv)
-w = QWidget()
-w.show()
-app.quit()
-'''], capture_output=True, timeout=5, env={**os.environ, 'QT_QPA_PLATFORM': 'xcb'})
-sys.exit(p.returncode)
-" 2>/dev/null; then
-        warn "Qt xcb plugin failed — using offscreen mode"
+    # Use xcb if a display is available, offscreen otherwise
+    if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+        warn "No display detected — using offscreen mode (run with --headless for CLI)"
         export QT_QPA_PLATFORM=offscreen
     fi
 
