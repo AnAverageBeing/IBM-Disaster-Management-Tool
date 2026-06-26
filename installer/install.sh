@@ -136,10 +136,18 @@ python3 -m ibm_dmt.main "\$@"
 LAUNCHER
     chmod +x "$launcher"
 
-    local bin_dir="${XDG_BIN_HOME:-$HOME/.local/bin}"
+    # Install to PATH — use /usr/local/bin for root, ~/.local/bin otherwise
+    if [ "$(id -u)" -eq 0 ]; then
+        local bin_dir="/usr/local/bin"
+    else
+        local bin_dir="${XDG_BIN_HOME:-$HOME/.local/bin}"
+    fi
     mkdir -p "$bin_dir"
     ln -sf "$launcher" "$bin_dir/ibm-dmt"
     info "Launcher: $bin_dir/ibm-dmt"
+    if ! echo "$PATH" | tr ':' '\n' | grep -qx "$bin_dir"; then
+        warn "$bin_dir is not in PATH. Add it: export PATH=\"\$PATH:$bin_dir\""
+    fi
 }
 
 create_desktop_entry() {
