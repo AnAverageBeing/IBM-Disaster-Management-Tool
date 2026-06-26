@@ -117,19 +117,22 @@ create_launcher() {
 source "$VENV_DIR/bin/activate"
 cd "$CLONE_DIR" 2>/dev/null || true
 
-# Detect missing xcb-cursor and suggest fix
-if ! ldconfig -p 2>/dev/null | grep -q libxcb-cursor && ! ldconfig -p 2>/dev/null | grep -q libxcb-cursor; then
-    if command -v apt &>/dev/null; then
-        export QT_QPA_PLATFORM=offscreen
-    fi
-fi
+# Test Qt xcb plugin, fall back to offscreen if it fails
+python3 -c "
+import os, subprocess, sys
+os.environ['QT_LOGGING_RULES'] = 'qt.qpa.xcb=false'
+p = subprocess.run([sys.executable, '-c', '''
+from PyQt6.QtWidgets import QApplication, QWidget
+import sys
+app = QApplication(sys.argv)
+w = QWidget()
+w.show()
+app.quit()
+'''], capture_output=True, timeout=5, env={**os.environ, 'QT_QPA_PLATFORM': 'xcb'})
+sys.exit(p.returncode)
+" 2>/dev/null || export QT_QPA_PLATFORM=offscreen
 
 python3 -m ibm_dmt.main "\$@"
-exit_code=\$?
-
-if [ \$exit_code -eq 127 ]; then
-    python3 -m ibm_dmt.main --platform offscreen "\$@"
-fi
 LAUNCHER
     chmod +x "$launcher"
 
@@ -179,11 +182,25 @@ SERVICE
 launch_gui() {
     echo
     info "Launching IBM-DMT GUI..."
+
     source "$VENV_DIR/bin/activate"
     cd "$CLONE_DIR" 2>/dev/null || true
 
-    if ! ldconfig -p 2>/dev/null | grep -q libxcb-cursor; then
-        warn "libxcb-cursor not found — falling back to offscreen mode"
+    # Test if Qt xcb plugin works (it needs libxcb-cursor0). If not, use offscreen.
+    if ! python3 -c "
+import os, subprocess, sys
+os.environ['QT_LOGGING_RULES'] = 'qt.qpa.xcb=false'
+p = subprocess.run([sys.executable, '-c', '''
+from PyQt6.QtWidgets import QApplication, QWidget
+import sys
+app = QApplication(sys.argv)
+w = QWidget()
+w.show()
+app.quit()
+'''], capture_output=True, timeout=5, env={**os.environ, 'QT_QPA_PLATFORM': 'xcb'})
+sys.exit(p.returncode)
+" 2>/dev/null; then
+        warn "Qt xcb plugin failed — using offscreen mode"
         export QT_QPA_PLATFORM=offscreen
     fi
 
